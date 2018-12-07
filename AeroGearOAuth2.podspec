@@ -9,6 +9,8 @@ Pod::Spec.new do |s|
   s.platform     = :ios, 9.0
   s.source_files = 'AeroGearOAuth2/*.{swift}'
   s.requires_arc = true
+  s.swift_version = '4.2'
   s.framework = 'Security'
   s.dependency 'AeroGearHttp', '2.0.0'
+
 end
