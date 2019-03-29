@@ -81,23 +81,47 @@ open class KeycloakOAuth2Module: OAuth2Module {
             }
 
             http.request(method: .post, path: config.refreshTokenEndpoint!, parameters: paramDict as [String : AnyObject]?, completionHandler: { (response, error) in
-                if (error != nil) {
+                guard error == nil else {
                     completionHandler(nil, error)
                     return
                 }
-
-                if let unwrappedResponse = response as? [String: AnyObject] {
-                    let accessToken: String = unwrappedResponse["access_token"] as! String
-                    let refreshToken: String = unwrappedResponse["refresh_token"] as! String
-                    let expiration = unwrappedResponse["expires_in"] as! NSNumber
-                    let exp: String = expiration.stringValue
-                    let expirationRefresh = unwrappedResponse["refresh_expires_in"] as? NSNumber
-                    let expRefresh = expirationRefresh?.stringValue
-
-                    // in Keycloak refresh token get refreshed every time you use them
-                    self.oauth2Session.save(accessToken: accessToken, refreshToken: refreshToken, accessTokenExpiration: exp, refreshTokenExpiration: expRefresh, idToken: nil)
-                    completionHandler(accessToken as AnyObject?, nil)
+                
+                guard let unwrappedResponse = response as? [String: AnyObject] else {
+                    let error = NSError(domain:AGAuthzErrorDomain, code:0, userInfo:["NSLocalizedDescriptionKey": "Malformatted response"])
+                    completionHandler(nil, error)
+                    return
                 }
+                
+                guard let accessToken: String = unwrappedResponse["access_token"] as? String else {
+                    let error = NSError(domain:AGAuthzErrorDomain, code:0, userInfo:["NSLocalizedDescriptionKey": "Malformatted response"])
+                    completionHandler(nil, error)
+                    return
+                }
+                guard let refreshToken: String = unwrappedResponse["refresh_token"] as? String else {
+                    let error = NSError(domain:AGAuthzErrorDomain, code:0, userInfo:["NSLocalizedDescriptionKey": "Malformatted response"])
+                    completionHandler(nil, error)
+                    return
+                }
+                guard let expiration = unwrappedResponse["expires_in"] as? NSNumber else {
+                    let error = NSError(domain:AGAuthzErrorDomain, code:0, userInfo:["NSLocalizedDescriptionKey": "Malformatted response"])
+                    completionHandler(nil, error)
+                    return
+                }
+                let exp: String = expiration.stringValue
+                
+                let expRefresh: String
+                
+                let expirationRefresh = unwrappedResponse["refresh_expires_in"] as? NSNumber ?? 0
+                
+                if expirationRefresh.intValue > 0 {
+                    expRefresh = expirationRefresh.stringValue
+                } else {
+                    expRefresh = "\(60 * 60 * 24 * 365)" //in case of 0 set to one year
+                }
+
+                // in Keycloak refresh token get refreshed every time you use them
+                self.oauth2Session.save(accessToken: accessToken, refreshToken: refreshToken, accessTokenExpiration: exp, refreshTokenExpiration: expRefresh, idToken: nil)
+                completionHandler(accessToken as AnyObject?, nil)
             })
         }
     }
