@@ -26,12 +26,22 @@ let KEYCLOAK_TOKEN = "eyJhbGciOiJSUzI1NiJ9.eyJuYW1lIjoiU2FtcGxlIFVzZXIiLCJlbWFpb
 class KeycloakOAuth2ModuleTests: XCTestCase {
 
     var givenRefreshExpiresIn:Int?
+    var mockedSession:MockOAuth2SessionWithRefreshToken!
+    var sut:KeycloakOAuth2Module!
     
     override func setUp() {
         super.setUp()
         givenRefreshExpiresIn = 1800
         OHHTTPStubs.removeAllStubs()
         setupStubKeycloakWithNSURLSessionDefaultConfiguration()
+        
+        let keycloakConfig = KeycloakConfig(
+            clientId: "shoot-third-party",
+            host: "http://localhost:8080",
+            realm: "shoot-realm")
+        
+        mockedSession = MockOAuth2SessionWithRefreshToken()
+        sut = KeycloakOAuth2Module(config: keycloakConfig, session: mockedSession)
     }
 
     
@@ -39,11 +49,14 @@ class KeycloakOAuth2ModuleTests: XCTestCase {
         super.tearDown()
         OHHTTPStubs.removeAllStubs()
         givenRefreshExpiresIn = nil
+        sut = nil
+        mockedSession = nil
     }
     
     func setupStubKeycloakWithNSURLSessionDefaultConfiguration() {
         // set up http stub
         _ = stub(condition: {_ in return true}, response: { (request: URLRequest!) -> OHHTTPStubsResponse in
+            print(request.url!.path)
             switch request.url!.path {
             case "/auth/realms/shoot-realm/protocol/openid-connect/token":
                 let string = "{\"access_token\":\"NEWLY_REFRESHED_ACCESS_TOKEN\", \"refresh_token\":\"\(KEYCLOAK_TOKEN)\",\"expires_in\":23, \"refresh_expires_in\": \(self.givenRefreshExpiresIn ?? 0)}"
@@ -60,21 +73,18 @@ class KeycloakOAuth2ModuleTests: XCTestCase {
     
     
     func testRefreshAccessWithKeycloak() {
+        //given
         let expectation = self.expectation(description: "KeycloakRefresh");
-        let keycloakConfig = KeycloakConfig(
-            clientId: "shoot-third-party",
-            host: "http://localhost:8080",
-            realm: "shoot-realm")
-
-        let mockedSession = MockOAuth2SessionWithRefreshToken()
-        let oauth2Module = KeycloakOAuth2Module(config: keycloakConfig, session: mockedSession)
-        oauth2Module.refreshAccessToken (completionHandler: { (response: AnyObject?, error:NSError?) -> Void in
+       
+        //when
+        sut.refreshAccessToken (completionHandler: { (response: AnyObject?, error:NSError?) -> Void in
+            //then
             XCTAssertEqual(response as! String, "NEWLY_REFRESHED_ACCESS_TOKEN", "If access token not valid but refresh token present and still valid")
-            XCTAssertEqual(mockedSession.savedRefreshedToken, KEYCLOAK_TOKEN, "Saved newly issued refresh token")
-            XCTAssertEqual(mockedSession.savedRefreshTokenExpiration, "\(self.givenRefreshExpiresIn!)")
+            XCTAssertEqual(self.mockedSession.savedRefreshedToken, KEYCLOAK_TOKEN, "Saved newly issued refresh token")
+            XCTAssertEqual(self.mockedSession.savedRefreshTokenExpiration, "\(self.givenRefreshExpiresIn!)")
             expectation.fulfill()
         })
-        waitForExpectations(timeout: 1000000, handler: nil)
+        waitForExpectations(timeout: 10, handler: nil)
     }
     
     func testRefreshTokenExpirationSetAs0WithKeycloak() {
@@ -82,20 +92,13 @@ class KeycloakOAuth2ModuleTests: XCTestCase {
         givenRefreshExpiresIn = 0
         
         let expectation = self.expectation(description: "KeycloakRefresh");
-        let keycloakConfig = KeycloakConfig(
-            clientId: "shoot-third-party",
-            host: "http://localhost:8080",
-            realm: "shoot-realm")
-        
-        let mockedSession = MockOAuth2SessionWithRefreshToken()
-        let oauth2Module = KeycloakOAuth2Module(config: keycloakConfig, session: mockedSession)
         
         //when
-        oauth2Module.refreshAccessToken (completionHandler: { (response: AnyObject?, error:NSError?) -> Void in
+        sut.refreshAccessToken (completionHandler: { (response: AnyObject?, error:NSError?) -> Void in
             //then
             XCTAssertEqual(response as! String, "NEWLY_REFRESHED_ACCESS_TOKEN", "If access token not valid but refresh token present and still valid")
-            XCTAssertEqual(mockedSession.savedRefreshedToken, KEYCLOAK_TOKEN, "Saved newly issued refresh token")
-            XCTAssertEqual(mockedSession.savedRefreshTokenExpiration, "\(60*60*24*365)")
+            XCTAssertEqual(self.mockedSession.savedRefreshedToken, KEYCLOAK_TOKEN, "Saved newly issued refresh token")
+            XCTAssertEqual(self.mockedSession.savedRefreshTokenExpiration, "\(60*60*24*365)")
             expectation.fulfill()
         })
         
@@ -103,19 +106,46 @@ class KeycloakOAuth2ModuleTests: XCTestCase {
     }
 
     func testRevokeAccess() {
-        setupStubKeycloakWithNSURLSessionDefaultConfiguration()
+        //given
         let expectation = self.expectation(description: "KeycloakRevoke");
-        let keycloakConfig = KeycloakConfig(
-            clientId: "shoot-third-party",
-            host: "http://localhost:8080",
-            realm: "shoot-realm")
-
-        let mockedSession = MockOAuth2SessionWithRefreshToken()
-        let oauth2Module = KeycloakOAuth2Module(config: keycloakConfig, session: mockedSession)
-        oauth2Module.revokeAccess(completionHandler: {(response: AnyObject?, error:NSError?) -> Void in
-            XCTAssertTrue(mockedSession.initCalled == 1, "revoke token reset session")
+       
+        //when
+        sut.revokeAccess(completionHandler: {(response: AnyObject?, error:NSError?) -> Void in
+            //then
+            XCTAssertTrue(self.mockedSession.initCalled == 1, "revoke token reset session")
             expectation.fulfill()
         })
+        waitForExpectations(timeout: 10, handler: nil)
+    }
+    
+    func testExchangeAuthorizationCodeForAccessToken() {
+       //given
+        let givenCode = "C_0_D_3"
+        let expectation = self.expectation(description: "exchangeAuthorizationCodeForAccessToken")
+        
+        sut.exchangeAuthorizationCodeForAccessToken(code: givenCode) { (response: AnyObject?, error:NSError?) in
+            //then
+            XCTAssertEqual(response as! String, "NEWLY_REFRESHED_ACCESS_TOKEN", "If access token not valid but refresh token present and still valid")
+            XCTAssertEqual(self.mockedSession.savedRefreshedToken, KEYCLOAK_TOKEN, "Saved newly issued refresh token")
+            XCTAssertEqual(self.mockedSession.savedRefreshTokenExpiration, "\(self.givenRefreshExpiresIn!)")
+            expectation.fulfill()
+        }
+        waitForExpectations(timeout: 10, handler: nil)
+    }
+    
+    func testExchangeAuthorizationCodeForAccessTokenWithExpirationSetAs0() {
+        //given
+        givenRefreshExpiresIn = 0
+        let givenCode = "C_0_D_3"
+        let expectation = self.expectation(description: "exchangeAuthorizationCodeForAccessToken")
+        
+        sut.exchangeAuthorizationCodeForAccessToken(code: givenCode) { (response: AnyObject?, error:NSError?) in
+            //then
+            XCTAssertEqual(response as! String, "NEWLY_REFRESHED_ACCESS_TOKEN", "If access token not valid but refresh token present and still valid")
+            XCTAssertEqual(self.mockedSession.savedRefreshedToken, KEYCLOAK_TOKEN, "Saved newly issued refresh token")
+            XCTAssertEqual(self.mockedSession.savedRefreshTokenExpiration, "\(60*60*24*365)")
+            expectation.fulfill()
+        }
         waitForExpectations(timeout: 10, handler: nil)
     }
 }

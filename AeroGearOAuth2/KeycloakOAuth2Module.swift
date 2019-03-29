@@ -86,42 +86,13 @@ open class KeycloakOAuth2Module: OAuth2Module {
                     return
                 }
                 
-                guard let unwrappedResponse = response as? [String: AnyObject] else {
-                    let error = NSError(domain:AGAuthzErrorDomain, code:0, userInfo:["NSLocalizedDescriptionKey": "Malformatted response"])
-                    completionHandler(nil, error)
-                    return
+                do {
+                    let accessToken = try self.tokenFrom(response: response)
+                    completionHandler(accessToken, nil)
+                } catch {
+                    completionHandler(nil, error as NSError)
                 }
                 
-                guard let accessToken: String = unwrappedResponse["access_token"] as? String else {
-                    let error = NSError(domain:AGAuthzErrorDomain, code:0, userInfo:["NSLocalizedDescriptionKey": "Malformatted response"])
-                    completionHandler(nil, error)
-                    return
-                }
-                guard let refreshToken: String = unwrappedResponse["refresh_token"] as? String else {
-                    let error = NSError(domain:AGAuthzErrorDomain, code:0, userInfo:["NSLocalizedDescriptionKey": "Malformatted response"])
-                    completionHandler(nil, error)
-                    return
-                }
-                guard let expiration = unwrappedResponse["expires_in"] as? NSNumber else {
-                    let error = NSError(domain:AGAuthzErrorDomain, code:0, userInfo:["NSLocalizedDescriptionKey": "Malformatted response"])
-                    completionHandler(nil, error)
-                    return
-                }
-                let exp: String = expiration.stringValue
-                
-                let expRefresh: String
-                
-                let expirationRefresh = unwrappedResponse["refresh_expires_in"] as? NSNumber ?? 0
-                
-                if expirationRefresh.intValue > 0 {
-                    expRefresh = expirationRefresh.stringValue
-                } else {
-                    expRefresh = "\(60 * 60 * 24 * 365)" //in case of 0 set to one year
-                }
-
-                // in Keycloak refresh token get refreshed every time you use them
-                self.oauth2Session.save(accessToken: accessToken, refreshToken: refreshToken, accessTokenExpiration: exp, refreshTokenExpiration: expRefresh, idToken: nil)
-                completionHandler(accessToken as AnyObject?, nil)
             })
         }
     }

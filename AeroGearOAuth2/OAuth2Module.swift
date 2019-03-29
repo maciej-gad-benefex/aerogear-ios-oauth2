@@ -213,34 +213,49 @@ open class OAuth2Module: AuthzModule {
         }
 
         http.request(method: .post, path: config.accessTokenEndpoint, parameters: paramDict as [String : AnyObject]?, completionHandler: {(responseObject, error) in
-            if (error != nil) {
+            
+            guard error == nil else {
                 completionHandler(nil, error)
                 return
             }
-
-            if let unwrappedResponse = responseObject as? [String: AnyObject] {
-                let accessToken = self.tokenResponse(unwrappedResponse)
-                completionHandler(accessToken as AnyObject?, nil)
+            
+            do {
+                let accessToken = try self.tokenFrom(response: responseObject)
+                completionHandler(accessToken, nil)
+            } catch {
+                completionHandler(nil, error as NSError)
             }
         })
     }
 
-    open func tokenResponse(_ unwrappedResponse: [String: AnyObject]) -> String {
-        let accessToken: String   = unwrappedResponse["access_token"] as! String
+    open func tokenFrom(response: Any?) throws -> AnyObject? {
+        guard let unwrappedResponse = response as? [String: AnyObject] else {
+            throw NSError(domain:AGAuthzErrorDomain, code:0, userInfo:["NSLocalizedDescriptionKey": "Malformatted response"])
+        }
+        
+        guard let accessToken: String = unwrappedResponse["access_token"] as? String else {
+             throw NSError(domain:AGAuthzErrorDomain, code:0, userInfo:["NSLocalizedDescriptionKey": "Malformatted response"])
+        }
         let refreshToken: String? = unwrappedResponse["refresh_token"] as? String
         let idToken: String?      = unwrappedResponse["id_token"] as? String
         let serverCode: String?   = unwrappedResponse["server_code"] as? String
-        let expiration            = unwrappedResponse["expires_in"] as? NSNumber
-        let exp: String?          = expiration?.stringValue
+        let expiration            = unwrappedResponse["expires_in"] as? NSNumber ?? 300
+        let exp: String?          = expiration.stringValue
         // expiration for refresh token is used in Keycloak
-        let expirationRefresh     = unwrappedResponse["refresh_expires_in"] as? NSNumber
-        let expRefresh            = expirationRefresh?.stringValue
+        let expirationRefresh     = unwrappedResponse["refresh_expires_in"] as? NSNumber ?? 0
+        let expRefresh: String
+
+        if expirationRefresh.intValue > 0 {
+            expRefresh = expirationRefresh.stringValue
+        } else {
+            expRefresh = "\(60 * 60 * 24 * 365)" //in case of 0 set to one year
+        }
 
         self.oauth2Session.save(accessToken: accessToken, refreshToken: refreshToken, accessTokenExpiration: exp, refreshTokenExpiration: expRefresh, idToken: idToken)
         self.idToken    = self.oauth2Session.idToken
         self.serverCode = serverCode
 
-        return accessToken
+        return accessToken as AnyObject?
     }
 
     /**
