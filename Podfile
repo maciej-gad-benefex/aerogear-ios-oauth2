@@ -5,10 +5,10 @@ platform :ios, '9.0'
 use_frameworks!
 
 target 'AeroGearOAuth2' do
-  pod 'AeroGearHttp', '2.0.0'
+  pod 'AeroGearHttp', :git => 'https://github.com/maciej-gad-benefex/aerogear-ios-http.git', :tag => '2.5.0'
 end
 
 target 'AeroGearOAuth2Tests' do
-	pod 'AeroGearHttp', '2.0.0'
+	pod 'AeroGearHttp', :git => 'https://github.com/maciej-gad-benefex/aerogear-ios-http.git', :tag => '2.5.0'
 	pod 'OHHTTPStubs', '5.2.2'
   end
